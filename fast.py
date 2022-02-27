@@ -50,7 +50,7 @@ class FASTClient(discord.Client):
             if message.content.startswith('!fastbot'):
                 await message.channel.send(data['help'])
             elif message.content.startswith('!checkStandup'):
-                await self.check_standup(last_chance=True)
+                await self.check_standup()
             elif message.content.startswith('!announceStandup'):
                 await self.announce_standup()
             elif message.content.startswith("!leaderboard"):
@@ -61,15 +61,18 @@ class FASTClient(discord.Client):
                 await self.show_configurables(message)
             elif message.content.startswith("!patchnotes"):
                 await message.channel.send(data['patchnotes'])
+            elif message.content.startswith("!rmleaderboard"):
+                if os.path.exists('leaderboard.csv'):
+                    os.rename('leaderboard.csv', 'backup-leaderboard.csv')
+                    await message.channel.send("Leaderboard reset!")
             elif message.channel.name == data['channel']:
                 # Mark standup complete on message to standup channel
                 # and react to message to show it works
-                if message.author != client.user:
-                    current_standup = self.standups[message.guild.id]
-                    if not current_standup[message.author.id]:
-                        current_standup[message.author.id] = True
-                        await message.add_reaction("<:takeASeat:892174188083822652>")
-                        print(f'Completed Standup: {current_standup}')
+                current_standup = self.standups[message.guild.id]
+                if not current_standup[message.author.id]:
+                    self.standups[message.guild.id][message.author.id] = True
+                    await message.add_reaction("<:takeASeat:892174188083822652>")
+                    print(f'Completed Standup: {current_standup}')
 
     # async def on_reaction_add(self, reaction, user):
     #     print(user.id)
@@ -88,6 +91,8 @@ class FASTClient(discord.Client):
             # Reset Standup tracker to not mark people who complete the last standup
             # afterwards from being counted for the next
             self.standups[guild.id] = {name['id']: False for name in data['people']}
+            global all_done
+            all_done = False
 
             # Get permission to mention everyone, get a random announcement, then write out each question in the
             # questions JSON array
@@ -135,7 +140,7 @@ class FASTClient(discord.Client):
             await channel.send(announcement)
 
             # Only add to the leaderboard after the last reminder of a standup
-            if last_chance:
+            if last_chance or all_done:
                 if os.path.exists('leaderboard.csv'):
                     df = pd.read_csv('leaderboard.csv')
                 else:
@@ -158,10 +163,13 @@ class FASTClient(discord.Client):
     @staticmethod
     async def send_leaderboard(channel: discord.TextChannel):
         # Create bar plot from data and send it along with the leaderboardAnnounce value
-        df = pd.read_csv('leaderboard.csv')
-        sns.barplot(x='name', y='completions', data=df)
-        plt.savefig("figure.png")
-        await channel.send(data['leaderboardAnnounce'], file=discord.File("figure.png"))
+        if os.path.exists('leaderboard.csv'):
+            df = pd.read_csv('leaderboard.csv')
+            sns.barplot(x='name', y='completions', data=df)
+            plt.savefig("figure.png")
+            await channel.send(data['leaderboardAnnounce'], file=discord.File("figure.png"))
+        else:
+            await channel.send("Leaderboard does not exist. Run !checkStandup to create one.")
 
     @staticmethod
     async def set_config(message):
@@ -196,11 +204,15 @@ async def standup():
     await client.announce_standup()
 
 
-@aiocron.crontab('0 19 * * 0,2,4', start=False)
+@aiocron.crontab('0 20 * * 0,2,4', start=False)
 async def check():
+    global all_done
     all_done = await client.check_standup()
+
+
+@aiocron.crontab('0 23 * * 0,2,4', start=False)
+async def check_again():
     if not all_done:
-        time.sleep(3600)
         await client.check_standup(last_chance=True)
 
 
@@ -215,6 +227,9 @@ def write_to_config(key, value):
 # Start aiocron timers
 standup.start()
 check.start()
+check_again.start()
+
+all_done = False
 
 # Load the configuration file and start the discord bot client
 data = json.load(open("fast.json"))
