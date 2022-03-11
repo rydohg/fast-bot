@@ -51,6 +51,14 @@ class FASTClient(discord.Client):
                 await message.channel.send(data['help'])
             elif message.content.startswith('!checkStandup'):
                 await self.check_standup()
+            elif message.content.startswith('!endStandup'):
+                await self.check_standup(last_chance=True)
+            elif message.content.startswith('!changeGraphColors'):
+                command = [p for p in re.split("( |\\\".*?\\\"|'.*?')", str(message.content)) if p.strip()]
+                if len(command) != 2:
+                    await message.channel.send("Didn't include an sns color pallete")
+                else:
+                    sns.set_palette(command[1])
             elif message.content.startswith('!announceStandup'):
                 await self.announce_standup()
             elif message.content.startswith("!leaderboard"):
@@ -199,18 +207,18 @@ class FASTClient(discord.Client):
 
 
 # crontab uses UTC so this is 12 EST on Sunday, Tuesday, and Thursday
-@aiocron.crontab('0 17 * * 0,2,4', start=False)
+@aiocron.crontab('0 17 * * *', start=False)
 async def standup():
     await client.announce_standup()
 
 
-@aiocron.crontab('0 20 * * 0,2,4', start=False)
+@aiocron.crontab('0 20 * * *', start=False)
 async def check():
     global all_done
     all_done = await client.check_standup()
 
 
-@aiocron.crontab('0 23 * * 0,2,4', start=False)
+@aiocron.crontab('0 23 * * *', start=False)
 async def check_again():
     if not all_done:
         await client.check_standup(last_chance=True)
