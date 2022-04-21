@@ -24,6 +24,7 @@ import json
 from datetime import datetime
 import aiocron
 import re
+import shlex
 
 # For creating the graphs
 import matplotlib.pyplot as plt
@@ -73,6 +74,16 @@ class FASTClient(discord.Client):
                 if os.path.exists('leaderboard.csv'):
                     os.rename('leaderboard.csv', 'backup-leaderboard.csv')
                     await message.channel.send("Leaderboard reset!")
+            elif message.content.startswith("!add"):
+                # Splits the command on spaces except when they're in quotes using regex
+                command = shlex.split(message.content)
+                print(command)
+
+                if len(command) != 2:
+                    await message.channel.send("Not enough arguments for add.\nEx: ``!add key``")
+                else:
+                    write_to_config(command[1], "")
+                    await message.channel.send(f'Added {command[1]}')
             elif message.channel.name == data['channel']:
                 # Mark standup complete on message to standup channel
                 # and react to message to show it works
@@ -182,7 +193,8 @@ class FASTClient(discord.Client):
     @staticmethod
     async def set_config(message):
         # Splits the command on spaces except when they're in quotes using regex
-        command = [p for p in re.split("( |\\\".*?\\\"|'.*?')", str(message.content)) if p.strip()]
+        # command = [p for p in re.split("( |\\\".*?\\\"|'.*?')", str(message.content)) if p.strip()]
+        command = shlex.split(message.content)
         print(command)
 
         # Only write valid commands to config
@@ -224,6 +236,20 @@ async def check_again():
         await client.check_standup(last_chance=True)
 
 
+@aiocron.crontab('30 0 * * *', start=False)
+async def nia_bot():
+    for guild in client.guilds:
+        # Only send the messages in the test server if test is enabled and only in MOSafely Studios if not
+        if data['test'] and guild.id != data['test_server']:
+            continue
+        if not data['test'] and guild.id == data['test_server']:
+            continue
+
+        everyone = discord.AllowedMentions(everyone=True)
+        await discord.utils.get(guild.channels, name='general') \
+            .send(content=f'@everyone WAKE UP EVERYONE IT\'S NIA BOT:\n{data["checkin"]}', allowed_mentions=everyone)
+
+
 # Write to json config only valid keys
 def write_to_config(key, value):
     if key not in data['nonconfigurable']:
@@ -236,6 +262,7 @@ def write_to_config(key, value):
 standup.start()
 check.start()
 check_again.start()
+nia_bot.start()
 
 all_done = False
 
